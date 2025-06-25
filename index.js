@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
 const app = express();
@@ -30,19 +30,11 @@ async function run() {
     const db = client.db("zapShiftDB"); // You can name this anything
     const parcelCollection = db.collection("parcels");
 
-
-
-
-
     // get api for all collection
     app.get("/parcels", async (req, res) => {
       const parcels = await parcelCollection.find().toArray();
       res.send(parcels);
     });
-
-
-
-
 
     // parcels get api with filter by email
 
@@ -67,11 +59,6 @@ async function run() {
           .json({ success: false, message: "Internal server error" });
       }
     });
-
-
-
-
-
 
     // POST API to create a new parcel
     app.post("/parcels", async (req, res) => {
@@ -103,10 +90,28 @@ async function run() {
       }
     });
 
+    // DELETE api for a parcel by _id
+    app.delete("/parcels/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await parcelCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
-
-
-    
+        if (result.deletedCount === 1) {
+          res
+            .status(200)
+            .json({ success: true, message: "Parcel deleted successfully" });
+        } else {
+          res.status(404).json({ success: false, message: "Parcel not found" });
+        }
+      } catch (error) {
+        console.error("❌ Error deleting parcel:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
