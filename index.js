@@ -44,6 +44,29 @@ async function run() {
     });
 
 
+    // parcels get api with filter by email
+
+    app.get("/api/parcels", async (req, res) => {
+  try {
+    const userEmail = req.query.email;
+    const filter = userEmail ? { userEmail } : {}; // if email exists, filter by it
+
+    const parcels = await parcelsCollection
+      .find(filter)
+      .sort({ creation_date: -1 }) // latest first
+      .toArray();
+
+    res.status(200).json({
+      success: true,
+      data: parcels,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching parcels:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
+
 
 
 // POST API to create a new parcel
