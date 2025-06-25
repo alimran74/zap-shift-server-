@@ -1,10 +1,8 @@
-const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const { MongoClient, ServerApiVersion } = require("mongodb");
 require("dotenv").config();
-
-
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -12,8 +10,6 @@ const port = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@imran.chugnik.mongodb.net/?retryWrites=true&w=majority&appName=Imran`;
 
@@ -23,7 +19,7 @@ const client = new MongoClient(uri, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
@@ -31,87 +27,102 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-        const db = client.db("zapShiftDB"); // You can name this anything
+    const db = client.db("zapShiftDB"); // You can name this anything
     const parcelCollection = db.collection("parcels");
 
 
 
 
+
     // get api for all collection
-     app.get("/parcels", async (req, res) => {
-      const parcels = await parcelsCollection.find().toArray();
+    app.get("/parcels", async (req, res) => {
+      const parcels = await parcelCollection.find().toArray();
       res.send(parcels);
     });
+
+
+
 
 
     // parcels get api with filter by email
 
     app.get("/api/parcels", async (req, res) => {
-  try {
-    const userEmail = req.query.email;
-    const filter = userEmail ? { userEmail } : {}; // if email exists, filter by it
+      try {
+        const userEmail = req.query.email;
+        const filter = userEmail ? { userEmail } : {};
 
-    const parcels = await parcelsCollection
-      .find(filter)
-      .sort({ creation_date: -1 }) // latest first
-      .toArray();
+        const parcels = await parcelCollection // ✅ use parcelCollection
+          .find(filter)
+          .sort({ creation_date: -1 })
+          .toArray();
 
-    res.status(200).json({
-      success: true,
-      data: parcels,
+        res.status(200).json({
+          success: true,
+          data: parcels,
+        });
+      } catch (error) {
+        console.error("❌ Error fetching parcels:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
     });
-  } catch (error) {
-    console.error("❌ Error fetching parcels:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-});
 
 
 
 
-// POST API to create a new parcel
-app.post("/parcels", async (req, res) => {
-  try {
-    const newParcel = req.body;
 
-    if (!newParcel || !newParcel.parcelId || !newParcel.senderName || !newParcel.receiverName) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
 
-    const result = await parcelCollection.insertOne(newParcel);
-    res.status(201).json({
-      success: true,
-      message: "Parcel created successfully",
-      insertedId: result.insertedId,
+    // POST API to create a new parcel
+    app.post("/parcels", async (req, res) => {
+      try {
+        const newParcel = req.body;
+
+        if (
+          !newParcel ||
+          !newParcel.parcelId ||
+          !newParcel.senderName ||
+          !newParcel.receiverName
+        ) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing required fields" });
+        }
+
+        const result = await parcelCollection.insertOne(newParcel);
+        res.status(201).json({
+          success: true,
+          message: "Parcel created successfully",
+          insertedId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating parcel:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
     });
-  } catch (error) {
-    console.error("Error creating parcel:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-});
 
 
+
+
+    
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
   }
-
 }
 run().catch(console.dir);
 
-
-
-
-
-
-
 // sample route
-app.get('/',(req,res) =>{
-    res.send(' 🚚zapShift server is running')
+app.get("/", (req, res) => {
+  res.send(" 🚚zapShift server is running");
 });
 
 app.listen(port, () => {
