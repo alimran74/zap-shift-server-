@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("zapShiftDB"); // You can name this anything
     const parcelCollection = db.collection("parcels");
@@ -38,49 +38,62 @@ async function run() {
 
     // parcels get api with filter by email
 
-    app.get("/api/parcels", async (req, res) => {
+    app.get("/parcels/:id", async (req, res) => {
       try {
-        const userEmail = req.query.email;
-        const filter = userEmail ? { userEmail } : {};
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid parcel ID" });
+        }
 
-        const parcels = await parcelCollection // ✅ use parcelCollection
-          .find(filter)
-          .sort({ creation_date: -1 })
-          .toArray();
-
-        res.status(200).json({
-          success: true,
-          data: parcels,
+        const parcel = await parcelCollection.findOne({
+          _id: new ObjectId(id),
         });
+
+        if (!parcel) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Parcel not found" });
+        }
+
+        res.status(200).json({ success: true, data: parcel });
       } catch (error) {
-        console.error("❌ Error fetching parcels:", error);
+        console.error("❌ Error fetching parcel by ID:", error);
         res
           .status(500)
           .json({ success: false, message: "Internal server error" });
       }
     });
 
-
     // GET a single parcel by ID
-app.get("/api/parcels/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Invalid parcel ID" });
-    }
+    app.get("/api/parcels/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid parcel ID" });
+        }
 
-    const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+        const parcel = await parcelCollection.findOne({
+          _id: new ObjectId(id),
+        });
 
-    if (!parcel) {
-      return res.status(404).json({ success: false, message: "Parcel not found" });
-    }
+        if (!parcel) {
+          return res
+            .status(404)
+            .json({ success: false, message: "Parcel not found" });
+        }
 
-    res.status(200).json({ success: true, data: parcel });
-  } catch (error) {
-    console.error("❌ Error fetching parcel by ID:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-});
+        res.status(200).json({ success: true, data: parcel });
+      } catch (error) {
+        console.error("❌ Error fetching parcel by ID:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
 
     // POST API to create a new parcel
     app.post("/parcels", async (req, res) => {
@@ -132,6 +145,36 @@ app.get("/api/parcels/:id", async (req, res) => {
         res
           .status(500)
           .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    // Create Payment Intent
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { amount } = req.body;
+
+        if (!amount || isNaN(amount)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid amount" });
+        }
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount * 100, // Stripe expects the amount in cents (for BDT it's also like paisa)
+          currency: "bdt", // or "usd", depending on your account
+          payment_method_types: ["card"],
+        });
+
+        res.status(200).send({
+          success: true,
+          clientSecret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        console.error("❌ Error creating payment intent:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to create payment intent",
+        });
       }
     });
 
