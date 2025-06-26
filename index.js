@@ -60,6 +60,28 @@ async function run() {
       }
     });
 
+
+    // GET a single parcel by ID
+app.get("/api/parcels/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid parcel ID" });
+    }
+
+    const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+
+    if (!parcel) {
+      return res.status(404).json({ success: false, message: "Parcel not found" });
+    }
+
+    res.status(200).json({ success: true, data: parcel });
+  } catch (error) {
+    console.error("❌ Error fetching parcel by ID:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
     // POST API to create a new parcel
     app.post("/parcels", async (req, res) => {
       try {
