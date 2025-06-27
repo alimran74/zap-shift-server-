@@ -32,6 +32,8 @@ async function run() {
     const db = client.db("zapShiftDB"); // You can name this anything
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
+    const trackingCollection = db.collection("trackings");
+
 
     // GET all parcels
     app.get("/parcels", async (req, res) => {
@@ -228,6 +230,27 @@ async function run() {
         });
       }
     });
+
+    // post api for tracking 
+
+    app.post("/trackings", async (req, res) => {
+  try {
+    const { parcelId, status, location, timestamp, note } = req.body;
+
+    if (!parcelId || !status || !location || !timestamp) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    const trackingUpdate = { parcelId, status, location, timestamp, note };
+    const result = await trackingCollection.insertOne(trackingUpdate);
+
+    res.status(201).json({ success: true, message: "Tracking update added", insertedId: result.insertedId });
+  } catch (err) {
+    console.error("❌ Error adding tracking update:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
 
     // Ping to confirm connection
     await client.db("admin").command({ ping: 1 });
