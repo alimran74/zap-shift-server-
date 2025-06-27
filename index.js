@@ -4,6 +4,8 @@ const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -24,45 +26,37 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
+    // Connect the client to the server (optional)
     // await client.connect();
 
     const db = client.db("zapShiftDB"); // You can name this anything
     const parcelCollection = db.collection("parcels");
+    const paymentCollection = db.collection("payments");
 
-    // get api for all collection
+    // GET all parcels
     app.get("/parcels", async (req, res) => {
       const parcels = await parcelCollection.find().toArray();
       res.send(parcels);
     });
 
-    // parcels get api with filter by email
-
-    app.get("/parcels/:id", async (req, res) => {
+    // GET parcels filtered by email
+    app.get("/api/parcels", async (req, res) => {
       try {
-        const id = req.params.id;
-        if (!ObjectId.isValid(id)) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid parcel ID" });
-        }
+        const userEmail = req.query.email;
+        const filter = userEmail ? { userEmail } : {};
 
-        const parcel = await parcelCollection.findOne({
-          _id: new ObjectId(id),
+        const parcels = await parcelCollection
+          .find(filter)
+          .sort({ creation_date: -1 })
+          .toArray();
+
+        res.status(200).json({
+          success: true,
+          data: parcels,
         });
-
-        if (!parcel) {
-          return res
-            .status(404)
-            .json({ success: false, message: "Parcel not found" });
-        }
-
-        res.status(200).json({ success: true, data: parcel });
       } catch (error) {
-        console.error("❌ Error fetching parcel by ID:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Internal server error" });
+        console.error("❌ Error fetching parcels:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -71,31 +65,23 @@ async function run() {
       try {
         const id = req.params.id;
         if (!ObjectId.isValid(id)) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid parcel ID" });
+          return res.status(400).json({ success: false, message: "Invalid parcel ID" });
         }
 
-        const parcel = await parcelCollection.findOne({
-          _id: new ObjectId(id),
-        });
+        const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
 
         if (!parcel) {
-          return res
-            .status(404)
-            .json({ success: false, message: "Parcel not found" });
+          return res.status(404).json({ success: false, message: "Parcel not found" });
         }
 
         res.status(200).json({ success: true, data: parcel });
       } catch (error) {
         console.error("❌ Error fetching parcel by ID:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Internal server error" });
+        res.status(500).json({ success: false, message: "Internal server error" });
       }
     });
 
-    // POST API to create a new parcel
+    // POST create new parcel
     app.post("/parcels", async (req, res) => {
       try {
         const newParcel = req.body;
@@ -106,9 +92,7 @@ async function run() {
           !newParcel.senderName ||
           !newParcel.receiverName
         ) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Missing required fields" });
+          return res.status(400).json({ success: false, message: "Missing required fields" });
         }
 
         const result = await parcelCollection.insertOne(newParcel);
@@ -119,49 +103,116 @@ async function run() {
         });
       } catch (error) {
         console.error("Error creating parcel:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Internal server error" });
+        res.status(500).json({ success: false, message: "Internal server error" });
       }
     });
 
-    // DELETE api for a parcel by _id
+    // DELETE a parcel by ID
     app.delete("/parcels/:id", async (req, res) => {
       try {
         const { id } = req.params;
-        const result = await parcelCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
+        const result = await parcelCollection.deleteOne({ _id: new ObjectId(id) });
 
         if (result.deletedCount === 1) {
-          res
-            .status(200)
-            .json({ success: true, message: "Parcel deleted successfully" });
+          res.status(200).json({ success: true, message: "Parcel deleted successfully" });
         } else {
           res.status(404).json({ success: false, message: "Parcel not found" });
         }
       } catch (error) {
         console.error("❌ Error deleting parcel:", error);
-        res
-          .status(500)
-          .json({ success: false, message: "Internal server error" });
+        res.status(500).json({ success: false, message: "Internal server error" });
       }
     });
 
-    // Create Payment Intent
+    // PATCH: Mark a parcel as paid
+    app.patch("/parcels/:id/mark-paid", async (req, res) => {
+      try {
+        const parcelId = req.params.id;
+        if (!ObjectId.isValid(parcelId)) {
+          return res.status(400).json({ success: false, message: "Invalid parcel ID" });
+        }
+
+        const result = await parcelCollection.updateOne(
+          { _id: new ObjectId(parcelId) },
+          { $set: { isPaid: true, status: "Paid" } } // optional to update status also
+        );
+
+        if (result.modifiedCount === 0) {
+          return res.status(404).json({ success: false, message: "Parcel not found or already paid" });
+        }
+
+        res.json({ success: true, message: "Parcel marked as paid" });
+      } catch (error) {
+        console.error("❌ Error updating parcel payment status:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
+
+    // GET payment history by user (filter by email)
+    app.get("/payments", async (req, res) => {
+      try {
+        const email = req.query.email;
+        const filter = email ? { userEmail: email } : {};
+
+        const history = await paymentCollection
+          .find(filter)
+          .sort({ paidAt: -1 }) // newest first
+          .toArray();
+
+        res.status(200).json({ success: true, data: history });
+      } catch (error) {
+        console.error("❌ Error in GET /payments:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    // POST payment record + update parcel isPaid
+    app.post("/payments", async (req, res) => {
+      try {
+        const paymentData = req.body;
+        const { parcelId, amount, userEmail, transactionId } = paymentData;
+
+        if (!parcelId || !amount || !userEmail) {
+          return res.status(400).json({ success: false, message: "Missing fields" });
+        }
+
+        // Update parcel to isPaid: true
+        await parcelCollection.updateOne(
+          { _id: new ObjectId(parcelId) },
+          { $set: { isPaid: true } }
+        );
+
+        // Save payment history
+        const paymentEntry = {
+          parcelId,
+          userEmail,
+          amount,
+          transactionId: transactionId || `txn_${Date.now()}`,
+          paid_at_string: new Date().toISOString(),
+          paidAt: new Date(), // for sorting
+        };
+
+        await paymentCollection.insertOne(paymentEntry);
+
+        res.status(200).json({ success: true, message: "Payment recorded" });
+      } catch (error) {
+        console.error("❌ Error in /payments:", error);
+        res.status(500).json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    // Create payment intent for Stripe
     app.post("/create-payment-intent", async (req, res) => {
       try {
         const { amount } = req.body;
 
         if (!amount || isNaN(amount)) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid amount" });
+          return res.status(400).json({ success: false, message: "Invalid amount" });
         }
 
         const paymentIntent = await stripe.paymentIntents.create({
-          amount: amount * 100, // Stripe expects the amount in cents (for BDT it's also like paisa)
-          currency: "bdt", // or "usd", depending on your account
+          amount: amount * 100, // Stripe expects amount in cents
+          currency: "usd",
           payment_method_types: ["card"],
         });
 
@@ -178,19 +229,16 @@ async function run() {
       }
     });
 
-    // Send a ping to confirm a successful connection
+    // Ping to confirm connection
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
-    // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
 run().catch(console.dir);
 
-// sample route
+// Sample root route
 app.get("/", (req, res) => {
   res.send(" 🚚zapShift server is running");
 });
