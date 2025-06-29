@@ -30,9 +30,27 @@ async function run() {
     // await client.connect();
 
     const db = client.db("zapShiftDB"); // You can name this anything
+    const UserCollection = db.collection("users")
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
     const trackingCollection = db.collection("trackings");
+
+
+
+    app.post('/users',async(req, res) =>{
+      const email = req.body.email;
+      const userExist = await UserCollection.findOne({email})
+
+      if(userExist){
+        return res.send({message:'user already existed'});
+      }
+
+      const user = req.body;
+      const result = await UserCollection.insertOne(user)
+      res.send(result);
+
+    })
+
 
 
     // GET all parcels
