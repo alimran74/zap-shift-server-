@@ -3,6 +3,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const admin = require("firebase-admin");
 
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
 
@@ -12,6 +13,17 @@ const port = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+
+
+const serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@imran.chugnik.mongodb.net/?retryWrites=true&w=majority&appName=Imran`;
 
@@ -35,6 +47,31 @@ async function run() {
     const paymentCollection = db.collection("payments");
     const trackingCollection = db.collection("trackings");
 
+    // custom middleware
+    const verifyFBToken = async(req, res, next) =>{
+      const authHeader = req.headers.authorization;
+      if(!authHeader){
+        return res.status(401).send({message:'unauthorized  access'})
+      }
+      const token = authHeader.split(' ')[1];
+      if(!token){
+        return res.status(401).send({message:'unauthorized access'})
+      }
+
+      // verify the token 
+     try{
+       const decoded = await admin.auth().verifyIdToken(token);
+       req.decoded = decoded;
+       next();
+     }
+     catch(error){
+      return res.status(403).send({message:'forbidden access'})
+     }
+
+
+      
+    }
+
 
 
     app.post('/users',async(req, res) =>{
@@ -42,6 +79,7 @@ async function run() {
       const userExist = await UserCollection.findOne({email})
 
       if(userExist){
+        // update last login info
         return res.send({message:'user already existed'});
       }
 
@@ -60,9 +98,10 @@ async function run() {
     });
 
     // GET parcels filtered by email
-    app.get("/api/parcels", async (req, res) => {
+    app.get("/api/parcels",verifyFBToken, async (req, res) => {
       try {
         const userEmail = req.query.email;
+        
         const filter = userEmail ? { userEmail } : {};
 
         const parcels = await parcelCollection
@@ -169,9 +208,13 @@ async function run() {
     });
 
     // GET payment history by user (filter by email)
-    app.get("/payments", async (req, res) => {
+    app.get("/payments", verifyFBToken, async (req, res) => {
+     
       try {
         const email = req.query.email;
+        if(req.decoded.email !== email){
+          return res.status(403).send({message: 'forbidden access'})
+        }
         const filter = email ? { userEmail: email } : {};
 
         const history = await paymentCollection
