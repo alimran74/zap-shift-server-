@@ -46,6 +46,7 @@ async function run() {
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
     const trackingCollection = db.collection("trackings");
+    const ridersCollection = db.collection("riders");
 
     // custom middleware
     const verifyFBToken = async(req, res, next) =>{
@@ -89,7 +90,23 @@ async function run() {
 
     })
 
+    // ✅ POST route to submit rider application
+app.post('/riders',  async (req, res) => {
+  try {
+    const riderData = req.body;
 
+    if (!riderData?.email || !riderData?.bikeRegNumber || !riderData?.nationalId) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    const result = await ridersCollection.insertOne(riderData);
+    res.status(201).json({ success: true, message: "Rider application submitted", insertedId: result.insertedId });
+
+  } catch (error) {
+    console.error("❌ Error submitting rider application:", error);
+    res.status(500).json({ success: false, message: "Server error while saving rider data" });
+  }
+});
 
     // GET all parcels
     app.get("/parcels", async (req, res) => {
