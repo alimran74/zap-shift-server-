@@ -5,7 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 const admin = require("firebase-admin");
 
-const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -14,16 +14,11 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-
-
 const serviceAccount = require("./firebase-admin-key.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
-
-
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@imran.chugnik.mongodb.net/?retryWrites=true&w=majority&appName=Imran`;
 
@@ -42,71 +37,120 @@ async function run() {
     // await client.connect();
 
     const db = client.db("zapShiftDB"); // You can name this anything
-    const UserCollection = db.collection("users")
+    const UserCollection = db.collection("users");
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments");
     const trackingCollection = db.collection("trackings");
     const ridersCollection = db.collection("riders");
 
     // custom middleware
-    const verifyFBToken = async(req, res, next) =>{
+    const verifyFBToken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
-      if(!authHeader){
-        return res.status(401).send({message:'unauthorized  access'})
+      if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized  access" });
       }
-      const token = authHeader.split(' ')[1];
-      if(!token){
-        return res.status(401).send({message:'unauthorized access'})
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
       }
 
-      // verify the token 
-     try{
-       const decoded = await admin.auth().verifyIdToken(token);
-       req.decoded = decoded;
-       next();
-     }
-     catch(error){
-      return res.status(403).send({message:'forbidden access'})
-     }
+      // verify the token
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    };
 
-
-      
-    }
-
-
-
-    app.post('/users',async(req, res) =>{
+    app.post("/users", async (req, res) => {
       const email = req.body.email;
-      const userExist = await UserCollection.findOne({email})
+      const userExist = await UserCollection.findOne({ email });
 
-      if(userExist){
+      if (userExist) {
         // update last login info
-        return res.send({message:'user already existed'});
+        return res.send({ message: "user already existed" });
       }
 
       const user = req.body;
-      const result = await UserCollection.insertOne(user)
+      const result = await UserCollection.insertOne(user);
       res.send(result);
-
-    })
+    });
 
     // ✅ POST route to submit rider application
-app.post('/riders',  async (req, res) => {
-  try {
-    const riderData = req.body;
+    app.post("/riders", async (req, res) => {
+      try {
+        const riderData = req.body;
 
-    if (!riderData?.email || !riderData?.bikeRegNumber || !riderData?.nationalId) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
+        if (
+          !riderData?.email ||
+          !riderData?.bikeRegNumber ||
+          !riderData?.nationalId
+        ) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing required fields" });
+        }
 
-    const result = await ridersCollection.insertOne(riderData);
-    res.status(201).json({ success: true, message: "Rider application submitted", insertedId: result.insertedId });
+        const result = await ridersCollection.insertOne(riderData);
+        res.status(201).json({
+          success: true,
+          message: "Rider application submitted",
+          insertedId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("❌ Error submitting rider application:", error);
+        res.status(500).json({
+          success: false,
+          message: "Server error while saving rider data",
+        });
+      }
+    });
 
-  } catch (error) {
-    console.error("❌ Error submitting rider application:", error);
-    res.status(500).json({ success: false, message: "Server error while saving rider data" });
-  }
-});
+    // GET: Load all riders with status 'pending'
+    app.get("/riders/pending", async (req, res) => {
+      try {
+        const pendingRiders = await ridersCollection
+          .find({ status: "pending" })
+          .toArray();
+        res.status(200).json({ success: true, data: pendingRiders });
+      } catch (error) {
+        console.error("❌ Error fetching pending riders:", error);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
+
+    // PATCH: Update rider status (approve/reject)
+    app.patch("/riders/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!["approved", "rejected", "pending"].includes(status)) {
+        return res.status(400).json({ message: "Invalid status value" });
+      }
+
+      try {
+        const result = await db
+          .collection("riders")
+          .updateOne({ _id: new ObjectId(id) }, { $set: { status } });
+
+        if (result.modifiedCount > 0) {
+          return res
+            .status(200)
+            .json({ success: true, message: "Rider status updated" });
+        } else {
+          return res
+            .status(404)
+            .json({ success: false, message: "Rider not found" });
+        }
+      } catch (err) {
+        console.error("❌ Error updating rider status:", err);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
 
     // GET all parcels
     app.get("/parcels", async (req, res) => {
@@ -115,10 +159,10 @@ app.post('/riders',  async (req, res) => {
     });
 
     // GET parcels filtered by email
-    app.get("/api/parcels",verifyFBToken, async (req, res) => {
+    app.get("/api/parcels", verifyFBToken, async (req, res) => {
       try {
         const userEmail = req.query.email;
-        
+
         const filter = userEmail ? { userEmail } : {};
 
         const parcels = await parcelCollection
@@ -132,7 +176,9 @@ app.post('/riders',  async (req, res) => {
         });
       } catch (error) {
         console.error("❌ Error fetching parcels:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -141,19 +187,27 @@ app.post('/riders',  async (req, res) => {
       try {
         const id = req.params.id;
         if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ success: false, message: "Invalid parcel ID" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid parcel ID" });
         }
 
-        const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+        const parcel = await parcelCollection.findOne({
+          _id: new ObjectId(id),
+        });
 
         if (!parcel) {
-          return res.status(404).json({ success: false, message: "Parcel not found" });
+          return res
+            .status(404)
+            .json({ success: false, message: "Parcel not found" });
         }
 
         res.status(200).json({ success: true, data: parcel });
       } catch (error) {
         console.error("❌ Error fetching parcel by ID:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -168,7 +222,9 @@ app.post('/riders',  async (req, res) => {
           !newParcel.senderName ||
           !newParcel.receiverName
         ) {
-          return res.status(400).json({ success: false, message: "Missing required fields" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing required fields" });
         }
 
         const result = await parcelCollection.insertOne(newParcel);
@@ -179,7 +235,9 @@ app.post('/riders',  async (req, res) => {
         });
       } catch (error) {
         console.error("Error creating parcel:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -187,16 +245,22 @@ app.post('/riders',  async (req, res) => {
     app.delete("/parcels/:id", async (req, res) => {
       try {
         const { id } = req.params;
-        const result = await parcelCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await parcelCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
 
         if (result.deletedCount === 1) {
-          res.status(200).json({ success: true, message: "Parcel deleted successfully" });
+          res
+            .status(200)
+            .json({ success: true, message: "Parcel deleted successfully" });
         } else {
           res.status(404).json({ success: false, message: "Parcel not found" });
         }
       } catch (error) {
         console.error("❌ Error deleting parcel:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -205,7 +269,9 @@ app.post('/riders',  async (req, res) => {
       try {
         const parcelId = req.params.id;
         if (!ObjectId.isValid(parcelId)) {
-          return res.status(400).json({ success: false, message: "Invalid parcel ID" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid parcel ID" });
         }
 
         const result = await parcelCollection.updateOne(
@@ -214,7 +280,10 @@ app.post('/riders',  async (req, res) => {
         );
 
         if (result.modifiedCount === 0) {
-          return res.status(404).json({ success: false, message: "Parcel not found or already paid" });
+          return res.status(404).json({
+            success: false,
+            message: "Parcel not found or already paid",
+          });
         }
 
         res.json({ success: true, message: "Parcel marked as paid" });
@@ -226,11 +295,10 @@ app.post('/riders',  async (req, res) => {
 
     // GET payment history by user (filter by email)
     app.get("/payments", verifyFBToken, async (req, res) => {
-     
       try {
         const email = req.query.email;
-        if(req.decoded.email !== email){
-          return res.status(403).send({message: 'forbidden access'})
+        if (req.decoded.email !== email) {
+          return res.status(403).send({ message: "forbidden access" });
         }
         const filter = email ? { userEmail: email } : {};
 
@@ -242,7 +310,9 @@ app.post('/riders',  async (req, res) => {
         res.status(200).json({ success: true, data: history });
       } catch (error) {
         console.error("❌ Error in GET /payments:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -253,7 +323,9 @@ app.post('/riders',  async (req, res) => {
         const { parcelId, amount, userEmail, transactionId } = paymentData;
 
         if (!parcelId || !amount || !userEmail) {
-          return res.status(400).json({ success: false, message: "Missing fields" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing fields" });
         }
 
         // Update parcel to isPaid: true
@@ -277,7 +349,9 @@ app.post('/riders',  async (req, res) => {
         res.status(200).json({ success: true, message: "Payment recorded" });
       } catch (error) {
         console.error("❌ Error in /payments:", error);
-        res.status(500).json({ success: false, message: "Internal server error" });
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
       }
     });
 
@@ -287,7 +361,9 @@ app.post('/riders',  async (req, res) => {
         const { amount } = req.body;
 
         if (!amount || isNaN(amount)) {
-          return res.status(400).json({ success: false, message: "Invalid amount" });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid amount" });
         }
 
         const paymentIntent = await stripe.paymentIntents.create({
@@ -309,30 +385,39 @@ app.post('/riders',  async (req, res) => {
       }
     });
 
-    // post api for tracking 
+    // post api for tracking
 
     app.post("/trackings", async (req, res) => {
-  try {
-    const { parcelId, status, location, timestamp, note } = req.body;
+      try {
+        const { parcelId, status, location, timestamp, note } = req.body;
 
-    if (!parcelId || !status || !location || !timestamp) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
-    }
+        if (!parcelId || !status || !location || !timestamp) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Missing required fields" });
+        }
 
-    const trackingUpdate = { parcelId, status, location, timestamp, note };
-    const result = await trackingCollection.insertOne(trackingUpdate);
+        const trackingUpdate = { parcelId, status, location, timestamp, note };
+        const result = await trackingCollection.insertOne(trackingUpdate);
 
-    res.status(201).json({ success: true, message: "Tracking update added", insertedId: result.insertedId });
-  } catch (err) {
-    console.error("❌ Error adding tracking update:", err);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-});
-
+        res.status(201).json({
+          success: true,
+          message: "Tracking update added",
+          insertedId: result.insertedId,
+        });
+      } catch (err) {
+        console.error("❌ Error adding tracking update:", err);
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
 
     // Ping to confirm connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // await client.close();
   }
