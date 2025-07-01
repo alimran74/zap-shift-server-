@@ -123,31 +123,53 @@ async function run() {
       }
     });
 
-    // PATCH: Update rider status (approve/reject)
-    app.patch("/riders/:id", async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
+    // PATCH: Update rider status
+app.patch('/riders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
 
-      if (!["approved", "rejected", "pending"].includes(status)) {
-        return res.status(400).json({ message: "Invalid status value" });
-      }
+  // Validate ObjectId
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid rider ID' });
+  }
 
+  // Validate status
+  const allowedStatuses = ['pending', 'approved', 'rejected', 'inactive'];
+  if (!allowedStatuses.includes(status)) {
+    return res.status(400).json({ success: false, message: 'Invalid status value' });
+  }
+
+  try {
+    const result = await client
+      .db("zapShiftDB")
+      .collection("riders")
+      .updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+
+    if (result.modifiedCount > 0) {
+      return res.status(200).json({ success: true, message: 'Rider status updated' });
+    } else {
+      return res.status(404).json({ success: false, message: 'Rider not found' });
+    }
+  } catch (err) {
+    console.error('❌ Error updating rider status:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+
+    // GET active riders
+    app.get("/riders/active", async (req, res) => {
       try {
-        const result = await db
+        const activeRiders = await db
           .collection("riders")
-          .updateOne({ _id: new ObjectId(id) }, { $set: { status } });
-
-        if (result.modifiedCount > 0) {
-          return res
-            .status(200)
-            .json({ success: true, message: "Rider status updated" });
-        } else {
-          return res
-            .status(404)
-            .json({ success: false, message: "Rider not found" });
-        }
-      } catch (err) {
-        console.error("❌ Error updating rider status:", err);
+          .find({ status: "approved" })
+          .toArray();
+        res.status(200).json({ success: true, data: activeRiders });
+      } catch (error) {
+        console.error("❌ Error fetching active riders:", error);
         res.status(500).json({ success: false, message: "Server error" });
       }
     });
