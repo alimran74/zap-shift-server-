@@ -126,38 +126,53 @@ async function run() {
     // PATCH: Update rider status
 app.patch('/riders/:id', async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, email } = req.body;
 
-  // Validate ObjectId
   if (!ObjectId.isValid(id)) {
     return res.status(400).json({ success: false, message: 'Invalid rider ID' });
   }
 
-  // Validate status
   const allowedStatuses = ['pending', 'approved', 'rejected', 'inactive'];
   if (!allowedStatuses.includes(status)) {
     return res.status(400).json({ success: false, message: 'Invalid status value' });
   }
 
   try {
-    const result = await client
-      .db("zapShiftDB")
-      .collection("riders")
-      .updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status } }
+    const RidersCollection = db.collection("riders");
+    const UserCollection = db.collection("users");
+
+    const riderUpdateResult = await RidersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status } }
+    );
+
+    if (status === "approved" && email) {
+      console.log("Updating user role for:", email);
+
+      const userRoleUpdateResult = await UserCollection.updateOne(
+        { email: { $regex: `^${email}$`, $options: 'i' } },
+        { $set: { role: "rider" } }
       );
 
-    if (result.modifiedCount > 0) {
-      return res.status(200).json({ success: true, message: 'Rider status updated' });
+      console.log("User role updated count:", userRoleUpdateResult.modifiedCount);
+    }
+
+    if (riderUpdateResult.modifiedCount > 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Rider status updated and user role synced",
+      });
     } else {
       return res.status(404).json({ success: false, message: 'Rider not found' });
     }
   } catch (err) {
-    console.error('❌ Error updating rider status:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    console.error('❌ Error in rider status update:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
+
+
+
 
 
     // GET active riders
