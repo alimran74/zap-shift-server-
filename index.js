@@ -78,6 +78,79 @@ async function run() {
       res.send(result);
     });
 
+    // GET: Search user by email
+    app.get("/users/search", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        if (!email) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Email query is required" });
+        }
+
+        const user = await client
+          .db("zapShiftDB")
+          .collection("users")
+          .findOne({ email });
+
+        if (!user) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        res.json({
+          success: true,
+          data: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role || "user",
+            createdAt: user.createdAt || "Not recorded",
+          },
+        });
+      } catch (error) {
+        console.error("❌ Error in user search:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
+
+    // PATCH: Make or remove admin
+app.patch('/users/:id/role', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
+    }
+
+    if (!['admin', 'user'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Invalid role' });
+    }
+
+    const result = await client
+      .db("zapShiftDB")
+      .collection("users")
+      .updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { role } }
+      );
+
+    if (result.modifiedCount > 0) {
+      return res.status(200).json({ success: true, message: `User role updated to ${role}` });
+    } else {
+      return res.status(404).json({ success: false, message: 'User not found or already has this role' });
+    }
+
+  } catch (error) {
+    console.error("❌ Error updating user role:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+
     // ✅ POST route to submit rider application
     app.post("/riders", async (req, res) => {
       try {
@@ -124,56 +197,63 @@ async function run() {
     });
 
     // PATCH: Update rider status
-app.patch('/riders/:id', async (req, res) => {
-  const { id } = req.params;
-  const { status, email } = req.body;
+    app.patch("/riders/:id", async (req, res) => {
+      const { id } = req.params;
+      const { status, email } = req.body;
 
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).json({ success: false, message: 'Invalid rider ID' });
-  }
+      if (!ObjectId.isValid(id)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid rider ID" });
+      }
 
-  const allowedStatuses = ['pending', 'approved', 'rejected', 'inactive'];
-  if (!allowedStatuses.includes(status)) {
-    return res.status(400).json({ success: false, message: 'Invalid status value' });
-  }
+      const allowedStatuses = ["pending", "approved", "rejected", "inactive"];
+      if (!allowedStatuses.includes(status)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid status value" });
+      }
 
-  try {
-    const RidersCollection = db.collection("riders");
-    const UserCollection = db.collection("users");
+      try {
+        const RidersCollection = db.collection("riders");
+        const UserCollection = db.collection("users");
 
-    const riderUpdateResult = await RidersCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status } }
-    );
+        const riderUpdateResult = await RidersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
 
-    if (status === "approved" && email) {
-      console.log("Updating user role for:", email);
+        if (status === "approved" && email) {
+          console.log("Updating user role for:", email);
 
-      const userRoleUpdateResult = await UserCollection.updateOne(
-        { email: { $regex: `^${email}$`, $options: 'i' } },
-        { $set: { role: "rider" } }
-      );
+          const userRoleUpdateResult = await UserCollection.updateOne(
+            { email: { $regex: `^${email}$`, $options: "i" } },
+            { $set: { role: "rider" } }
+          );
 
-      console.log("User role updated count:", userRoleUpdateResult.modifiedCount);
-    }
+          console.log(
+            "User role updated count:",
+            userRoleUpdateResult.modifiedCount
+          );
+        }
 
-    if (riderUpdateResult.modifiedCount > 0) {
-      return res.status(200).json({
-        success: true,
-        message: "Rider status updated and user role synced",
-      });
-    } else {
-      return res.status(404).json({ success: false, message: 'Rider not found' });
-    }
-  } catch (err) {
-    console.error('❌ Error in rider status update:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
-
-
-
+        if (riderUpdateResult.modifiedCount > 0) {
+          return res.status(200).json({
+            success: true,
+            message: "Rider status updated and user role synced",
+          });
+        } else {
+          return res
+            .status(404)
+            .json({ success: false, message: "Rider not found" });
+        }
+      } catch (err) {
+        console.error("❌ Error in rider status update:", err);
+        return res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
+    });
 
     // GET active riders
     app.get("/riders/active", async (req, res) => {
