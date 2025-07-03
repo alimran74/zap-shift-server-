@@ -79,42 +79,40 @@ async function run() {
     });
 
     // GET: Search user by email
-    app.get("/users/search", async (req, res) => {
-      try {
-        const { email } = req.query;
+app.get('/users/search', async (req, res) => {
+  const keyword = req.query.keyword;
 
-        if (!email) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Email query is required" });
-        }
+  if (!keyword) {
+    return res.status(400).json({ success: false, message: "Search keyword is required" });
+  }
 
-        const user = await client
-          .db("zapShiftDB")
-          .collection("users")
-          .findOne({ email });
+  try {
+    const regex = new RegExp(keyword, "i"); // case-insensitive match
+    const users = await UserCollection
+      .find({
+        $or: [
+          { name: { $regex: regex } },
+          { email: { $regex: regex } }
+        ]
+      })
+      .project({ password: 0 }) // optional: exclude sensitive fields
+      .limit(10)
+      .toArray();
 
-        if (!user) {
-          return res
-            .status(404)
-            .json({ success: false, message: "User not found" });
-        }
+    if (users.length > 0) {
+      res.status(200).json({ success: true, users });
+    } else {
+      res.status(404).json({ success: false, message: "No matching users found" });
+    }
+  } catch (error) {
+    console.error("❌ Search error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
-        res.json({
-          success: true,
-          data: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role || "user",
-            createdAt: user.createdAt || "Not recorded",
-          },
-        });
-      } catch (error) {
-        console.error("❌ Error in user search:", error);
-        res.status(500).json({ success: false, message: "Server error" });
-      }
-    });
+
+
+
 
     // PATCH: Make or remove admin
 app.patch('/users/:id/role', async (req, res) => {
