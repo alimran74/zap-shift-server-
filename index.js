@@ -79,75 +79,109 @@ async function run() {
     });
 
     // GET: Search user by email
-app.get('/users/search', async (req, res) => {
-  const keyword = req.query.keyword;
+    app.get("/users/search", async (req, res) => {
+      const keyword = req.query.keyword;
 
-  if (!keyword) {
-    return res.status(400).json({ success: false, message: "Search keyword is required" });
-  }
+      if (!keyword) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Search keyword is required" });
+      }
 
-  try {
-    const regex = new RegExp(keyword, "i"); // case-insensitive match
-    const users = await UserCollection
-      .find({
-        $or: [
-          { name: { $regex: regex } },
-          { email: { $regex: regex } }
-        ]
-      })
-      .project({ password: 0 }) // optional: exclude sensitive fields
-      .limit(10)
-      .toArray();
+      try {
+        const regex = new RegExp(keyword, "i"); // case-insensitive match
+        const users = await UserCollection.find({
+          $or: [{ name: { $regex: regex } }, { email: { $regex: regex } }],
+        })
+          .project({ password: 0 }) // optional: exclude sensitive fields
+          .limit(10)
+          .toArray();
 
-    if (users.length > 0) {
-      res.status(200).json({ success: true, users });
-    } else {
-      res.status(404).json({ success: false, message: "No matching users found" });
-    }
-  } catch (error) {
-    console.error("❌ Search error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
+        if (users.length > 0) {
+          res.status(200).json({ success: true, users });
+        } else {
+          res
+            .status(404)
+            .json({ success: false, message: "No matching users found" });
+        }
+      } catch (error) {
+        console.error("❌ Search error:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
 
+    // GET: Get user role by email
+    app.get("/users/role", async (req, res) => {
+      const email = req.query.email;
 
+      if (!email) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Email is required" });
+      }
 
+      try {
+        const user = await client
+          .db("zapShiftDB")
+          .collection("users")
+          .findOne({ email: { $regex: `^${email}$`, $options: "i" } });
 
+        if (!user) {
+          return res
+            .status(404)
+            .json({ success: false, message: "User not found" });
+        }
+
+        res.status(200).json({
+          success: true,
+          role: user.role || "user", // default role fallback
+        });
+      } catch (error) {
+        console.error("❌ Error getting role:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
 
     // PATCH: Make or remove admin
-app.patch('/users/:id/role', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { role } = req.body;
+    app.patch("/users/:id/role", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { role } = req.body;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid user ID' });
-    }
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid user ID" });
+        }
 
-    if (!['admin', 'user'].includes(role)) {
-      return res.status(400).json({ success: false, message: 'Invalid role' });
-    }
+        if (!["admin", "user"].includes(role)) {
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid role" });
+        }
 
-    const result = await client
-      .db("zapShiftDB")
-      .collection("users")
-      .updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { role } }
-      );
+        const result = await client
+          .db("zapShiftDB")
+          .collection("users")
+          .updateOne({ _id: new ObjectId(id) }, { $set: { role } });
 
-    if (result.modifiedCount > 0) {
-      return res.status(200).json({ success: true, message: `User role updated to ${role}` });
-    } else {
-      return res.status(404).json({ success: false, message: 'User not found or already has this role' });
-    }
-
-  } catch (error) {
-    console.error("❌ Error updating user role:", error);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
+        if (result.modifiedCount > 0) {
+          return res
+            .status(200)
+            .json({ success: true, message: `User role updated to ${role}` });
+        } else {
+          return res
+            .status(404)
+            .json({
+              success: false,
+              message: "User not found or already has this role",
+            });
+        }
+      } catch (error) {
+        console.error("❌ Error updating user role:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+      }
+    });
 
     // ✅ POST route to submit rider application
     app.post("/riders", async (req, res) => {
