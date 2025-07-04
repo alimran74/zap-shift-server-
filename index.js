@@ -314,27 +314,64 @@ async function run() {
       }
     });
 
-    // ✅ GET riders by district (called region in frontend)
-   // ✅ /riders/by-district?district=Dhaka
-app.get("/riders/by-district", async (req, res) => {
-  const { district } = req.query;
+    // ✅ GET riders by  /riders/by-region
+ app.get("/riders/by-region", async (req, res) => {
+  const { region } = req.query;
 
-  if (!district) {
-    return res.status(400).json({ success: false, message: "District is required" });
+  if (!region) {
+    return res.status(400).json({ success: false, message: "Region is required" });
   }
 
   try {
     const matchedRiders = await db.collection("riders").find({
-      district: { $regex: `^${district}$`, $options: "i" },
+      region: { $regex: `^${region}$`, $options: "i" },
       status: "approved",
     }).toArray();
 
     res.status(200).json({ success: true, data: matchedRiders });
   } catch (error) {
-    console.error("❌ Error getting riders by district:", error);
+    console.error("❌ Error getting riders by region:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
+
+// ✅ POST /parcels/assign-rider
+app.patch('/parcels/assign-rider/:parcelId', async (req, res) => {
+  const { parcelId } = req.params;
+  const { rider } = req.body;
+
+  try {
+    const result = await db.collection('parcels').updateOne(
+      { parcelId },
+      {
+        $set: {
+          status: 'rider_assigned',
+          assignedRider: {
+            riderId: rider._id,
+            name: rider.name,
+            phone: rider.phone,
+            region: rider.region,
+            district: rider.district,
+          },
+        },
+      }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: 'Rider assigned successfully' });
+    } else {
+      res.status(404).send({ success: false, message: 'Parcel not found' });
+    }
+  } catch (error) {
+    console.error('❌ Error assigning rider:', error);
+    res.status(500).send({ success: false, message: 'Server error' });
+  }
+});
+
+
+
+
 
 
     // GET all parcels
