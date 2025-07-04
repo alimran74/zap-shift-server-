@@ -64,15 +64,15 @@ async function run() {
       }
     };
 
-    const verifyAdmin =async ( req, res, next) =>{
+    const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
-      const query = {email}
+      const query = { email };
       const user = await UserCollection.findOne(query);
-      if(!user || user.role !== 'admin'){
-        return res.status(403).send({message: 'forbidden access'})
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
       }
-      next()
-    }
+      next();
+    };
 
     app.post("/users", async (req, res) => {
       const email = req.body.email;
@@ -153,45 +153,48 @@ async function run() {
     });
 
     // PATCH: Make or remove admin
-    app.patch("/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { role } = req.body;
+    app.patch(
+      "/users/:id/role",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { id } = req.params;
+          const { role } = req.body;
 
-        if (!ObjectId.isValid(id)) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid user ID" });
-        }
+          if (!ObjectId.isValid(id)) {
+            return res
+              .status(400)
+              .json({ success: false, message: "Invalid user ID" });
+          }
 
-        if (!["admin", "user"].includes(role)) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Invalid role" });
-        }
+          if (!["admin", "user"].includes(role)) {
+            return res
+              .status(400)
+              .json({ success: false, message: "Invalid role" });
+          }
 
-        const result = await client
-          .db("zapShiftDB")
-          .collection("users")
-          .updateOne({ _id: new ObjectId(id) }, { $set: { role } });
+          const result = await client
+            .db("zapShiftDB")
+            .collection("users")
+            .updateOne({ _id: new ObjectId(id) }, { $set: { role } });
 
-        if (result.modifiedCount > 0) {
-          return res
-            .status(200)
-            .json({ success: true, message: `User role updated to ${role}` });
-        } else {
-          return res
-            .status(404)
-            .json({
+          if (result.modifiedCount > 0) {
+            return res
+              .status(200)
+              .json({ success: true, message: `User role updated to ${role}` });
+          } else {
+            return res.status(404).json({
               success: false,
               message: "User not found or already has this role",
             });
+          }
+        } catch (error) {
+          console.error("❌ Error updating user role:", error);
+          res.status(500).json({ success: false, message: "Server error" });
         }
-      } catch (error) {
-        console.error("❌ Error updating user role:", error);
-        res.status(500).json({ success: false, message: "Server error" });
       }
-    });
+    );
 
     // ✅ POST route to submit rider application
     app.post("/riders", async (req, res) => {
@@ -224,7 +227,7 @@ async function run() {
     });
 
     // GET: Load all riders with status 'pending'
-    app.get("/riders/pending",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.get("/riders/pending", verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const pendingRiders = await ridersCollection
           .find({ status: "pending" })
@@ -298,7 +301,7 @@ async function run() {
     });
 
     // GET active riders
-    app.get("/riders/active",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.get("/riders/active", verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const activeRiders = await db
           .collection("riders")
@@ -310,6 +313,29 @@ async function run() {
         res.status(500).json({ success: false, message: "Server error" });
       }
     });
+
+    // ✅ GET riders by district (called region in frontend)
+   // ✅ /riders/by-district?district=Dhaka
+app.get("/riders/by-district", async (req, res) => {
+  const { district } = req.query;
+
+  if (!district) {
+    return res.status(400).json({ success: false, message: "District is required" });
+  }
+
+  try {
+    const matchedRiders = await db.collection("riders").find({
+      district: { $regex: `^${district}$`, $options: "i" },
+      status: "approved",
+    }).toArray();
+
+    res.status(200).json({ success: true, data: matchedRiders });
+  } catch (error) {
+    console.error("❌ Error getting riders by district:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 
     // GET all parcels
     app.get("/parcels", async (req, res) => {
